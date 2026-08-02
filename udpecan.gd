@@ -190,7 +190,7 @@ var _decoders:Dictionary[StringName,Callable] = {&'default':_decode_advertisemen
 ## Custom [Callable] used to Generate an identity value.
 ## [br]Signature: f(x:Variant)->Variant
 ## [br]Default: var_to_bytes(randi()).hex_encode()
-var ident_generator: Callable = default_ident_method
+var ident_generator: Callable = fruity_name
 
 ## Custom [Callable] to format the identity as desired.
 ## [br]Signature: f(x:Variant)->String
@@ -317,7 +317,8 @@ func _init() -> void:
 	_maintenance_timer = Timer.new()
 	_maintenance_timer.name = "MaintenanceTimer"
 	add_child(_maintenance_timer, true)
-	Core.connect2(_maintenance_timer.timeout, _on_maintenance_timeout)
+	if _maintenance_timer.timeout.connect(_on_maintenance_timeout) != OK:
+		print("ERROR: connection to maintenance timer failed")
 
 
 func _ready() -> void:
@@ -1071,18 +1072,6 @@ func is_msg_missing_keys( msg:Dictionary, keys:Array ) -> bool:
 				return true) != null
 
 
-func msg_str( msg:Dictionary ) -> String:
-	var content:Variant = msg.get(&"content", 'none')
-	return "snapshot:\n{%s\n}" % "\n".join([
-		EneLog.format_key_value("  type", msg[&"type"]),
-		EneLog.format_key_value("  ip", msg[&"ip"]),
-		EneLog.format_key_value("  port", msg[&"port"]),
-		EneLog.format_key_value("  ident", msg.get(&"ident")),
-		EneLog.format_key_value("  ad_id", msg.get(&"ad_id")),
-		EneLog.format_key_value("  kind", msg[&"kind"]),
-		EneLog.format_key_value("  content", content)])
-
-
 # FIXME, is this used?
 func compare(_a:Dictionary, _b:Dictionary) -> bool:
 	return false
@@ -1199,10 +1188,44 @@ func _decode_advertisement(bytes:PackedByteArray) -> Variant:
 #                    ██ ██████  ███████ ██   ████    ██                        #
 func                        __________IDENT__________              ()->void:pass
 
-## Default implementation uses var_to_bytes(randi()).hex_encode()
-## Override these in a subclass for FlatBuffers, JSON, etc.
-func default_ident_method() -> Variant:
-	return NameGenerator.generate_compact()
+const ADJECTIVES: PackedStringArray = [
+	&"Ancient", &"Bold", &"Brave", &"Bright", &"Calm", &"Charming", &"Clever",
+	&"Cool", &"Cosmic", &"Crispy", &"Curious", &"Dapper", &"Dazzling", &"Eager",
+	&"Electric", &"Elegant", &"Fancy", &"Fearless", &"Fierce", &"Fluffy",
+	&"Friendly", &"Funky", &"Fuzzy", &"Gentle", &"Glowing", &"Golden", &"Happy",
+	&"Hidden", &"Honest", &"Humble", &"Icy", &"Jolly", &"Juicy", &"Kind",
+	&"Lazy", &"Lively", &"Lucky", &"Magic", &"Mellow", &"Merry", &"Mighty",
+	&"Mystic", &"Noble", &"Polite", &"Proud", &"Quick", &"Quiet", &"Royal",
+	&"Salty", &"Sassy", &"Shiny", &"Silent", &"Silly", &"Silky", &"Sleepy",
+	&"Smart", &"Smooth", &"Sneaky", &"Snowy", &"Soft", &"Sour", &"Spicy",
+	&"Spry", &"Starry", &"Sturdy", &"Sunny", &"Swift", &"Tame", &"Tangy",
+	&"Tasty", &"Thirsty", &"Tidy", &"Tiny", &"Tough", &"Trusty", &"Vivid",
+	&"Warm", &"Wild", &"Wise", &"Witty", &"Zesty",
+	]
+
+const FRUITS: PackedStringArray = [
+	&"Apple", &"Apricot", &"Avocado", &"Banana", &"Blackberry", &"Blueberry",
+	&"Cherry", &"Coconut", &"Cranberry", &"Currant", &"Date", &"Dragonfruit",
+	&"Durian", &"Elderberry", &"Fig", &"Gooseberry", &"Grape", &"Grapefruit",
+	&"Guava", &"Jackfruit", &"Kiwi", &"Kumquat", &"Lemon", &"Lime", &"Lychee",
+	&"Mango", &"Melon", &"Mulberry", &"Nectarine", &"Olive", &"Orange",
+	&"Papaya", &"Passionfruit", &"Peach", &"Pear", &"Persimmon", &"Pineapple",
+	&"Plum", &"Pomegranate", &"Quince", &"Raspberry", &"Starfruit",
+	&"Strawberry", &"Tamarind", &"Tangerine", &"Watermelon",
+	]
+
+## Generates friendly random device/user names in the style of LocalSend.
+## Names are produced as "AdjectiveFruit" pairs (e.g. "SpicyMango"),
+## Pass a non-negative [param seed] for deterministic output.
+static func fruity_name(name_seed:int = -1) -> String:
+	var rng := RandomNumberGenerator.new()
+	if name_seed >= 0:
+		rng.seed = name_seed
+	else:
+		rng.randomize()
+	var adj := ADJECTIVES[rng.randi() % ADJECTIVES.size()]
+	var fruit := FRUITS[rng.randi() % FRUITS.size()]
+	return "%s%s" % [adj, fruit]
 
 
 #              ██    ██ ██████  ██████   █████  ████████ ███████               #
