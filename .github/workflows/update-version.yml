@@ -1,0 +1,44 @@
+name: Auto version
+on:
+  push:
+    branches: ['**']          # all branches
+    tags-ignore: ['**']       # don’t run on the tags we create
+
+permissions:
+  contents: write             # needed to push commit + tag
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # needed to see all tags
+
+      - name: Bump version, update files & tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 1. Find latest tag on this branch (or start at 0.1.0)
+          LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "Latest tag on branch: $LATEST"
+
+          # 2. Bump minor (v1.2.3 → v1.3.0)
+          IFS=. read -r MAJOR MINOR PATCH <<< "${LATEST#v}"
+          NEW_VERSION="v$MAJOR.$((MINOR+1)).0"
+          echo "New version: $NEW_VERSION"
+
+          # 3. Simple string replace in the .gd file
+          sed -i "s/const V := \".*\"/const V := \"${NEW_VERSION#v}\"/" *.gd
+
+          # 4. Generate version.json with hash
+          HASH=$(sha256sum *.gd | cut -d' ' -f1)
+          echo "{\"version\":\"${NEW_VERSION#v}\",\"hash\":\"$HASH\"}" > version.json
+
+          # 5. Commit & tag
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add *.gd version.json
+          git commit -m "chore: bump version to $NEW_VERSION" || exit 0
+          git tag "$NEW_VERSION"
+          git push origin HEAD --tags
