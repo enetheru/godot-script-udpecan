@@ -1,9 +1,17 @@
 name: Auto version
+
 on:
-  push:
-    branches: ['**']
-    tags-ignore: ['**']
-  workflow_dispatch:          # lets you run it manually from the Actions tab
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type"
+        required: true
+        type: choice
+        default: minor
+        options:
+          - patch
+          - minor
+          - major
 
 permissions:
   contents: write
@@ -11,30 +19,51 @@ permissions:
 jobs:
   version:
     runs-on: ubuntu-latest
-    # Only run the bump when the commit message contains [release]
-    # or when you manually trigger the workflow
-    if: contains(github.event.head_commit.message, '[release]') || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0          # needed so we can see all tags
 
       - name: Bump version, update files & tag
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Get the latest tag (or start from v0.0.0)
           LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           IFS=. read -r MAJOR MINOR PATCH <<< "${LATEST#v}"
-          NEW_VERSION="v$MAJOR.$((MINOR+1)).0"
 
-          sed -i "s/const V := \".*\"/const V := \"${NEW_VERSION#v}\"/" *.gd
+          # Bump according to the chosen type
+          case "${{ github.event.inputs.bump }}" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
 
+          NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+          VERSION_NUMBER="${MAJOR}.${MINOR}.${PATCH}"
+
+          echo "Bumping to $NEW_VERSION"
+
+          # Update the version constant in every .gd file
+          sed -i "s/const V:String = \".*\"/const V:String = \"${VERSION_NUMBER}\"/" *.gd
+
+          # Create version.json with version + content hash
           HASH=$(sha256sum *.gd | cut -d' ' -f1)
-          echo "{\"version\":\"${NEW_VERSION#v}\",\"hash\":\"$HASH\"}" > version.json
+          echo "{\"version\":\"${VERSION_NUMBER}\",\"hash\":\"$HASH\"}" > version.json
 
+          # Commit & tag
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add *.gd version.json
-          git commit -m "chore: bump version to $NEW_VERSION" || exit 0
+          git commit -m "chore: bump version to $NEW_VERSION"
           git tag "$NEW_VERSION"
           git push origin HEAD --tags
