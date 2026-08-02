@@ -48,6 +48,7 @@ extends Node
 
 # Versioning and source location
 const V:String = "0.0.0"
+const S:String = "https://github.com/enetheru/godot-script-udpecan"
 const U:String = "https://raw.githubusercontent.com/enetheru/godot-script-udpecan/main/version.json"
 const VERSION_CHECK_ENABLED:bool = true
 
@@ -121,7 +122,7 @@ var expiration_threshold: int = 9000
 	set(v):
 		bind_address = v
 		if is_instance_valid(_udp_packet_peer) \
-		and _udp_packet_peer.is_bound():
+				and _udp_packet_peer.is_bound():
 			stop()
 
 ## UDP port the leader should bind to. Peers send heartbeats here.
@@ -278,7 +279,7 @@ func _on_maintenance_timeout() -> void:
 	# Add or Remove peer advertisement
 	if advertise_presence and not _peer_advert_ident:
 		_peer_advert_ident = post_advert(
-			custom_presence_content, &'peer'
+				custom_presence_content, &'peer'
 		)
 	if not advertise_presence and _peer_advert_ident:
 		remove_post(_peer_advert_ident)
@@ -307,6 +308,9 @@ static func _static_init() -> void:
 
 
 func _init() -> void:
+	if Engine.is_editor_hint():
+		process_mode = Node.PROCESS_MODE_DISABLED
+		return
 	name = &"UDPecan"
 
 	# Maintenance Timer
@@ -341,9 +345,8 @@ func start() -> void:
 	if local_addresses.is_empty():
 		print("ERROR: There are no ip addresses, Check Network Settings")
 		return
-	print("TRACE: Local Address:\n", "\n".join(local_addresses))
 
-	print("NOTICE: TODO: implement some nice way to specify the local bind address")
+	# TODO: implement some nice way to specify the local bind address
 	local_ip = local_addresses[0]
 
 	if local_ident == null:
@@ -362,7 +365,6 @@ func start() -> void:
 ## Stops listening, closes the UDP socket, stops the timer and clears state.
 ## Sends a shutdown announcement before closing.
 func stop() -> void:
-
 	stopping.emit()
 	if not _maintenance_timer.is_stopped():
 		_maintenance_timer.stop()
@@ -394,7 +396,6 @@ func get_random_port_number() -> int:
 
 # --- Advertisement Encoding / Decoding abstraction ---
 func assign_encoding(kind:StringName, encoder:Callable, decoder:Callable) -> void:
-
 	_encoders[kind] = encoder
 	_decoders[kind] = decoder
 
@@ -414,7 +415,7 @@ func udp_report() -> String:
 		["get_packet_error", udp.get_packet_error()],
 		["get_packet_ip", udp.get_packet_ip()],
 		["get_packet_port", udp.get_packet_port()],
-	].map(func(r:Array)->String:return "%s: %s" % r))
+		].map(func(r:Array)->String:return "%s: %s" % r))
 
 #       ██    ██ ██████  ██████        ██████  ███████ ███████ ██████          #
 #       ██    ██ ██   ██ ██   ██       ██   ██ ██      ██      ██   ██         #
@@ -425,11 +426,10 @@ func                      _____UDP_PACKET_PEER_____                ()->void:pass
 
 ## Close any previously active listener.
 func close_udp_packet_peer() -> void:
-
 	if is_instance_valid(_udp_packet_peer) \
-	and _udp_packet_peer.is_bound():
+			and _udp_packet_peer.is_bound():
 		print("INFO: Closing out old listener bound to",
-			_udp_packet_peer.get_local_port())
+				_udp_packet_peer.get_local_port())
 		_udp_packet_peer.close()
 		_udp_packet_peer = null
 	_dest = Dest.NONE
@@ -445,7 +445,7 @@ func set_udp_packet_peer( new_packet_peer:PacketPeerUDP ) -> void:
 		return
 
 	if is_instance_valid(_udp_packet_peer) \
-	and _udp_packet_peer.is_bound():
+			and _udp_packet_peer.is_bound():
 		close_udp_packet_peer()
 
 	local_port = 0
@@ -462,7 +462,6 @@ func set_udp_packet_peer( new_packet_peer:PacketPeerUDP ) -> void:
 
 ## Bind to the leader port
 func _bind_as_leader() -> void:
-
 	var udp_peer := PacketPeerUDP.new()
 	udp_peer.set_broadcast_enabled(true)
 
@@ -476,16 +475,14 @@ func _bind_as_leader() -> void:
 			_leader_info[&'last_seen'] = Time.get_ticks_msec()
 			promoted.emit()
 		ERR_UNAVAILABLE: # This is OK too.
-			print("TRACE: Binding as leader to", leader_port,
-				"failed with error string:",err, error_string(err))
+			pass
 		_:
 			print("ERROR: Binding as leader to", leader_port,
-				"failed with error string:",err, error_string(err))
+					"failed with error string:",err, error_string(err))
 
 
 ## Keep trying to bind to ports until we get one
 func _bind_as_peer() -> void:
-
 	var udp_peer := PacketPeerUDP.new()
 	udp_peer.set_broadcast_enabled(true)
 	var attempt:int = 0
@@ -502,7 +499,6 @@ func _bind_as_peer() -> void:
 
 
 func set_broadcast_destination() -> Error:
-
 	if not is_instance_valid(_udp_packet_peer):
 		print("ERROR: Cannot set_dest_address on invalid udp_listener")
 		return ERR_UNAVAILABLE
@@ -510,19 +506,17 @@ func set_broadcast_destination() -> Error:
 	_dest = Dest.BROADCAST
 	var dest_address:String = "255.255.255.255"
 	var dest_port:int = leader_port
-	print("TRACE: ip:", dest_address, "port:", dest_port)
+	# print("TRACE: ip:", dest_address, "port:", dest_port)
 
 	var err:Error = _udp_packet_peer.set_dest_address(dest_address, dest_port)
 	if err:
 		_dest = Dest.ERROR
 		print("ERROR: ", error_string(err))
-		print("DEBUG: ", udp_report())
 
 	return err
 
 
 func set_leader_destination() -> Error:
-
 	if not is_instance_valid(_udp_packet_peer):
 		print("ERROR: Cannot set_dest_address on invalid udp_listener")
 		return ERR_UNAVAILABLE
@@ -531,12 +525,10 @@ func set_leader_destination() -> Error:
 	var dest_port:int = _leader_info.get(&'port')
 	_dest = Dest.LEADER
 
-	print("TRACE: ip:", dest_address, "port:", dest_port)
 	var err:Error = _udp_packet_peer.set_dest_address(dest_address, dest_port)
 	if err:
 		_dest = Dest.ERROR
 		print("ERROR: ", error_string(err))
-		print("DEBUG: ", udp_report())
 	return err
 
 #                   ██████  ███████ ███████ ██████  ███████                    #
@@ -547,19 +539,16 @@ func set_leader_destination() -> Error:
 func                        __________PEERS__________              ()->void:pass
 
 func clear_leader_info() -> void:
-
 	_leader_ident = null
 	_leader_info.clear()
 
 
 func update_leader_info( leader_ident:Variant, msg:Dictionary ) -> void:
-
 	_leader_ident = leader_ident
 	_leader_info.merge(msg, true)
 
 
 func add_peer( peer_ident:Variant, msg:Dictionary ) -> void:
-
 	_peers[peer_ident] = msg
 	peer_appeared.emit( peer_ident, msg )
 
@@ -570,7 +559,8 @@ func remove_peer(peer_ident:Variant) -> void:
 			print("ERROR: peer_ident did not exist in _peers")
 		peer_vanished.emit( peer_ident )
 	else:
-		print("NOTICE: FIXME: peer_ident not found in peers")
+		# FIXME: peer_ident not found in peers
+		pass
 
 
 #                      ██████   ██████  ███████ ████████                       #
@@ -595,9 +585,9 @@ func                        __________POST___________              ()->void:pass
 
 ## Manually set or update an advertisement this instance should broadcast.
 func post_advert(
-			content:Variant,
-			kind:StringName = StringName(),
-			ad_id:Variant = ident_generator.call()) -> Variant:
+		content:Variant,
+		kind:StringName = StringName(),
+		ad_id:Variant = ident_generator.call()) -> Variant:
 
 	var new_post:bool = not _posted_adverts.has(ad_id)
 
@@ -659,7 +649,6 @@ func modify_post( ad_id:Variant, kind:StringName, content:Variant ) -> void:
 # Remove
 
 func remove_post( ad_id:Variant ) -> void:
-
 	if not _posted_adverts.erase(ad_id):
 		print("ERROR: missing ad_id")
 		return
@@ -758,7 +747,6 @@ func                        __________SEND___________              ()->void:pass
 
 ## (Peer => (broadcast|leader.ip):leader_port)
 func _peer_heartbeat() -> void:
-
 	# All packets are sent to the Leader, but only ADVERT packets
 	# are propagated to other PEERS.
 	var msg: Dictionary = {
@@ -773,7 +761,6 @@ func _peer_heartbeat() -> void:
 ## Peer sends one final packet announcing it is leaving.
 ## Leader will relay it like any other PEER packet.
 func _send_to_leader( bytes:PackedByteArray ) -> void:
-
 	var err: Error = OK
 	if _dest != Dest.LEADER and _leader_ident != null:
 		err = set_leader_destination()
@@ -796,11 +783,10 @@ func _send_to_leader( bytes:PackedByteArray ) -> void:
 ## [b]  [code]&'data'[/code]: encoded[br]
 ## }[br]
 func _broadcast_adverts() -> void:
-
 	var err: Error = OK
 	# Use the leader if they exist and we are not them.
 	if not is_leader() \
-	and _leader_ident != null:
+			and _leader_ident != null:
 		err = set_leader_destination()
 	# else broadcast
 	elif _dest != Dest.BROADCAST:
@@ -839,14 +825,14 @@ func _broadcast_adverts() -> void:
 
 ## update the packet and send to peers.
 func _distribute_packet(source_ip:String, source_port:int, msg:Dictionary) -> void:
-
 	msg[&'type'] = msg.get(&'type', 0) | MsgType.RELAY
 	var relay_bytes := var_to_bytes(msg)
 	for peer_ident:Variant in _peers:
 		var peer_info:Dictionary = _peers[peer_ident]
 		if peer_info.is_empty():
 			if not _peers.erase(peer_ident):
-				print("NOTICE: FIXME: peer_ident in dictionary without info:", peer_ident)
+				pass
+				#FIXME: peer_ident in dictionary without info
 			continue
 
 		var peer_ip:String = peer_info.get(&'ip', '')
@@ -854,10 +840,8 @@ func _distribute_packet(source_ip:String, source_port:int, msg:Dictionary) -> vo
 
 		# Skip sending a peer their own information
 		if source_ip == peer_ip \
-		and source_port == peer_port:
+				and source_port == peer_port:
 			continue
-
-		print("TRACE: sending to", peer_ip, ":", peer_port)
 
 		_dest = Dest.PEER
 		var err:Error = _udp_packet_peer.set_dest_address(peer_ip, peer_port)
@@ -874,7 +858,6 @@ func _distribute_packet(source_ip:String, source_port:int, msg:Dictionary) -> vo
 ## Peer sends one final packet announcing it is leaving.
 ## Leader will relay it like any other PEER packet.
 func _announce_stop( reason:String = '') -> void:
-
 	var packet: Dictionary = {
 		&"type": MsgType.PEER | MsgType.SHUTDOWN | (MsgType.LEADER if is_leader() else 0),
 		&'ident':local_ident,
@@ -940,9 +923,6 @@ func _process_udp_listener() -> void:
 		var variant: Variant = bytes_to_var(bytes)
 		if not (variant is Dictionary):
 			print("ERROR: Deserialization to Dictionary failed")
-			print("DEBUG: from: %s:%d" % [sender_ip, sender_port])
-			print("DEBUG: typeof:", type_string(typeof(variant)))
-			print("DEBUG: ", bytes)
 			continue
 
 		# expected minimum msg format on receipt {
@@ -956,7 +936,7 @@ func _process_udp_listener() -> void:
 		var msg_type:int = msg.get(&'type')
 
 		if msg_type & MsgType.RELAY \
-		and is_leader():
+				and is_leader():
 			print("ERROR: leader should not receive relayed messages")
 			continue
 
@@ -973,7 +953,7 @@ func _process_udp_listener() -> void:
 
 			# Relay the appropriate packets onward.
 			if msg_type & (MsgType.ADVERT|MsgType.SHUTDOWN) \
-			and is_leader():
+					and is_leader():
 				_distribute_packet(source_ip, source_port, msg)
 
 		# This message was relayed to us from the leader, fetch the original
@@ -1008,7 +988,6 @@ func _process_udp_listener() -> void:
 
 
 func _process_peer_packet( peer_ident:Variant, msg:Dictionary ) -> void:
-
 	var msg_type:int = msg.get(&'type')
 
 	if msg_type & MsgType.LEADER:
@@ -1030,7 +1009,6 @@ func _process_peer_packet( peer_ident:Variant, msg:Dictionary ) -> void:
 
 
 func _process_leader_packet( peer_ident:Variant, msg:Dictionary ) -> void:
-
 	var msg_type:int = msg.get(&'type')
 
 	if msg_type & MsgType.SHUTDOWN:
@@ -1045,16 +1023,12 @@ func _process_leader_packet( peer_ident:Variant, msg:Dictionary ) -> void:
 		return
 
 	# we have a new leader
-	print("TRACE: Old Leader:", _leader_ident)
-	print("TRACE: New Leader:", peer_ident)
 	update_leader_info(peer_ident, msg)
 	leader_updated.emit( _leader_ident, _leader_info )
 
 
 
 func _process_advert_packet( ad_id:Variant, msg:Dictionary ) -> void:
-
-
 	if msg.has(&'kind'):
 		var kind:StringName = msg[&'kind']
 		if _decoders.has(kind):
@@ -1084,17 +1058,17 @@ func                        ________VALIDATE_________              ()->void:pass
 ## but then I lose reporting.
 static func missing_keys(d:Dictionary, v:Array) -> Array:
 	var remaining:Array = v.filter(
-		func( k:Variant ) -> bool:
-			return not d.has(k))
+			func( k:Variant ) -> bool:
+				return not d.has(k))
 	return remaining
 
 
 ## msg must contain the listed keys
 func is_msg_missing_keys( msg:Dictionary, keys:Array ) -> bool:
 	return missing_keys(msg, keys).reduce(
-		func(k:Variant, _a:Variant) -> Variant:
-			print("DEBUG: msg.has(%s) == false" % [k] )
-			return true) != null
+			func(k:Variant, _a:Variant) -> Variant:
+				print("DEBUG: msg.has(%s) == false" % [k] )
+				return true) != null
 
 
 func msg_str( msg:Dictionary ) -> String:
@@ -1107,6 +1081,7 @@ func msg_str( msg:Dictionary ) -> String:
 		EneLog.format_key_value("  ad_id", msg.get(&"ad_id")),
 		EneLog.format_key_value("  kind", msg[&"kind"]),
 		EneLog.format_key_value("  content", content)])
+
 
 # FIXME, is this used?
 func compare(_a:Dictionary, _b:Dictionary) -> bool:
@@ -1124,12 +1099,11 @@ func                        ________MAINTAIN_________              ()->void:pass
 func _leader_maintenance() -> void:
 	if _peers.is_empty(): return
 
-
 	# Build the presence packet to send to peers.
 	var packet: Dictionary = {
 		&"type": MsgType.PEER | MsgType.LEADER | (MsgType.ADVERT if advertise_presence else 0),
 		&'ident': local_ident,
-	}
+		}
 	if advertise_presence and custom_presence_content:
 		packet[&'data'] = custom_presence_content
 
@@ -1157,18 +1131,17 @@ func _leader_maintenance() -> void:
 ## The peer needs to attempt to bind to the leader port if the leader becomes
 ## unresponsive and maintain it's heartbeat
 func _peer_maintenance() -> void:
-
 	# Check the leader's last seen, and delete it if expired.
 	if not _leader_info.is_empty():
 		var last_seen:int = _leader_info.get(&'last_seen')
 		if is_expired(last_seen):
-			print("NOTICE: Note: Leader info has expired.")
+			# Leader info has expired
 			_leader_info.clear()
 			_leader_ident = null
 	# If the _peers dont see a heartbeat from the leader, then they should
 	# attempt to bind the leader position.
 	if _leader_ident == null \
-	and allow_promotion:
+			and allow_promotion:
 		_bind_as_leader()
 		if is_leader(): return
 
@@ -1180,7 +1153,6 @@ func _peer_maintenance() -> void:
 ## The leader needs to retire expired _peers from its peer list, and maintain its
 ## heartbeat
 func _peer_list_maintenance() -> void:
-
 	for peer_ident:StringName in _peers.keys():
 		var peer_info:Dictionary = _peers.get(peer_ident)
 		var last_seen:int = peer_info.get(&'last_seen', 0)
@@ -1208,6 +1180,7 @@ func                        ________ENCODING_________              ()->void:pass
 ## Override these in a subclass for FlatBuffers, JSON, etc.
 func _encode_advertisement(variant:Variant) -> PackedByteArray:
 	return var_to_bytes(variant)
+
 
 ## Default implementation uses Dictionary + var_to_bytes.
 ## Override these in a subclass for FlatBuffers, JSON, etc.
@@ -1241,16 +1214,15 @@ func                        __________UPDATE_________              ()->void:pass
 
 static func version_check() -> void:
 	if not Engine.is_editor_hint(): return
-	print("udpecan version check: ", U)
 	var h := HTTPRequest.new()
 	(Engine.get_main_loop() as SceneTree).root.add_child(h)
-	if h.request(U) != OK: print_rich("Update check http error")
+	if h.request(U) != OK: print_rich("UDPecan Version Check HTTPRequest Error")
 	var r:Array = await h.request_completed
 	h.queue_free()
 	if r[1] != 200:
-		print("HTTP.response:", r[1])
+		print("UDPecan Version Check HTTP.response:", r[1])
 		return
 	var body:PackedByteArray = r[3]
 	online_version = JSON.parse_string(body.get_string_from_utf8())
 	if online_version and online_version.get("version", "") != V:
-		print_rich("[color=yellow]Update available: %s → %s[/color]" % [V, online_version.version])
+		print_rich("[color=yellow][url=%s]UDPecan Update available: %s → %s[/url][/color]" % [S, V, online_version.version])
