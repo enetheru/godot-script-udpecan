@@ -47,7 +47,7 @@ extends Node
 ## [br][color=goldenrod]TODO[/color]: Add a pause/resume, that maintains the port binding, but ignores packets.
 
 # Versioning and source location
-const V:String = "0.0.0"
+const V:String = "0.1.0"
 const S:String = "https://github.com/enetheru/godot-script-udpecan"
 const U:String = "https://raw.githubusercontent.com/enetheru/godot-script-udpecan/main/version.json"
 const VERSION_CHECK_ENABLED:bool = true
