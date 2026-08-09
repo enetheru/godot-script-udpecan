@@ -175,6 +175,9 @@ var _peers:Dictionary = {}
 var _leader_ident:Variant = null
 var _leader_info:Dictionary
 
+## True while a one-shot promotion timer is waiting (leader election jitter).
+var _promotion_pending:bool = false
+
 ## Advertisments we are sending
 var _posted_adverts:Dictionary
 
@@ -376,6 +379,7 @@ func stop() -> void:
 
 	_leader_ident = null
 	_leader_info.clear()
+	_promotion_pending = false
 	_dest = Dest.NONE
 
 	close_udp_packet_peer()
@@ -587,8 +591,11 @@ func _bind_as_leader() -> void:
 			_leader_info[&'port'] = leader_port
 			_leader_info[&'ip'] = local_ip
 			_leader_info[&'last_seen'] = Time.get_ticks_msec()
+			_promotion_pending = false
 			promoted.emit()
-		ERR_UNAVAILABLE: # This is OK too.
+			# Tell peers immediately — do not wait for the next maintenance tick.
+			_announce_leader_presence()
+		ERR_UNAVAILABLE: # Another process on this host already holds the port.
 			pass
 		_:
 			print("ERROR: Binding as leader to", leader_port,
@@ -660,6 +667,68 @@ func clear_leader_info() -> void:
 func update_leader_info( leader_ident:Variant, msg:Dictionary ) -> void:
 	_leader_ident = leader_ident
 	_leader_info.merge(msg, true)
+	# In-flight promotion timer is left armed; _on_promotion_timer no-ops if
+	# _leader_ident is set (avoids double timers by keeping _promotion_pending).
+
+
+## Deterministic 0 .. maintenance_interval/2 ms from local identity.
+func _promotion_jitter_ms() -> int:
+	var span:int = maxi(1, maintenance_interval >> 1)
+	return absi(hash(idstr.call(local_ident))) % span
+
+
+## Schedule a delayed leader bind so peers do not all race on the same tick.
+func _schedule_promotion_attempt() -> void:
+	if _promotion_pending or not allow_promotion:
+		return
+	if is_leader() or _leader_ident != null:
+		return
+	if not is_inside_tree():
+		return
+	_promotion_pending = true
+	var delay_s:float = _promotion_jitter_ms() / 1000.0
+	get_tree().create_timer(delay_s).timeout.connect(
+			_on_promotion_timer, CONNECT_ONE_SHOT)
+
+
+func _on_promotion_timer() -> void:
+	_promotion_pending = false
+	if not allow_promotion or is_leader() or _leader_ident != null:
+		return
+	if not is_instance_valid(_udp_packet_peer) or not _udp_packet_peer.is_bound():
+		return
+	_bind_as_leader()
+	if is_leader():
+		return
+	# Lost the race: broadcast heartbeat so the winner learns about us quickly.
+	_dest = Dest.NONE
+	_peer_heartbeat()
+
+
+func _build_leader_presence_packet() -> Dictionary:
+	var packet: Dictionary = {
+		&"type": MsgType.PEER | MsgType.LEADER | (MsgType.ADVERT if advertise_presence else 0),
+		&'ident': local_ident,
+		&'ip': local_ip,
+		&'port': leader_port,
+	}
+	if advertise_presence and custom_presence_content:
+		packet[&'data'] = custom_presence_content
+	return packet
+
+
+## Immediate LAN announcement after promotion (do not wait for maintenance).
+func _announce_leader_presence() -> void:
+	if not is_instance_valid(_udp_packet_peer) or not _udp_packet_peer.is_bound():
+		return
+	var bytes:PackedByteArray = var_to_bytes(_build_leader_presence_packet())
+	var err:Error = set_broadcast_destination()
+	if err != OK:
+		print("ERROR: leader announce set_dest failed:", error_string(err))
+		return
+	err = _udp_packet_peer.put_packet(bytes)
+	if err != OK:
+		print("ERROR: leader announce put_packet failed:", error_string(err))
 
 
 ## Deterministic dual-leader rule: the lexicographically smaller id string wins.
@@ -1159,8 +1228,9 @@ func _process_leader_packet( peer_ident:Variant, msg:Dictionary ) -> void:
 
 	if msg_type & MsgType.SHUTDOWN:
 		clear_leader_info()
-		_dest = Dest.PEER
-		_bind_as_leader()
+		_dest = Dest.NONE
+		# Jittered election — avoid every peer binding on the same packet.
+		_schedule_promotion_attempt()
 		return
 
 	# Ignore our own broadcast loopback if the OS delivers it.
@@ -1255,17 +1325,7 @@ func                        ________MAINTAIN_________              ()->void:pass
 ## The leader needs to retire expired _peers from its peer list, and maintain its
 ## heartbeat
 func _leader_maintenance() -> void:
-	# Build the presence packet to send to peers / LAN.
-	var packet: Dictionary = {
-		&"type": MsgType.PEER | MsgType.LEADER | (MsgType.ADVERT if advertise_presence else 0),
-		&'ident': local_ident,
-		&'ip': local_ip,
-		&'port': leader_port,
-		}
-	if advertise_presence and custom_presence_content:
-		packet[&'data'] = custom_presence_content
-
-	var bytes := var_to_bytes(packet)
+	var bytes:PackedByteArray = var_to_bytes(_build_leader_presence_packet())
 
 	# Broadcast so peers and rival leaders hear us (multi-host bind is not exclusive).
 	var err:Error = set_broadcast_destination()
@@ -1305,19 +1365,14 @@ func _peer_maintenance() -> void:
 	if not _leader_info.is_empty():
 		var last_seen:int = _leader_info.get(&'last_seen')
 		if is_expired(last_seen):
-			# Leader info has expired
+			# Leader info has expired — jittered re-election, not a stampede.
 			_leader_info.clear()
 			_leader_ident = null
-	# If the _peers dont see a heartbeat from the leader, then they should
-	# attempt to bind the leader position.
-	if _leader_ident == null \
-			and allow_promotion:
-		_bind_as_leader()
-		if is_leader():
-			return
-		# Lost the race (or multi-host election still settling): drop stale dest
-		# so the following heartbeat goes out on broadcast to find the winner.
-		_dest = Dest.NONE
+			_dest = Dest.NONE
+			_schedule_promotion_attempt()
+	elif _leader_ident == null and allow_promotion and not _promotion_pending:
+		# Never saw a leader (or lost state): keep trying with jitter.
+		_schedule_promotion_attempt()
 
 	# If a peer wants packets relayed to it, it needs to notify the leader that
 	# it exists.
