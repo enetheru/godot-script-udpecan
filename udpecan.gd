@@ -352,7 +352,8 @@ func start() -> void:
 		return
 
 	# TODO: implement some nice way to specify the local bind address
-	local_ip = local_addresses[0]
+	# Prefer concrete bind_address; otherwise first interface (see issue #6).
+	local_ip = _resolve_local_ip(local_addresses[0])
 
 	if local_ident == null:
 		local_ident = ident_generator.call()
@@ -442,6 +443,29 @@ func close_udp_packet_peer() -> void:
 	local_ip = '-'
 
 
+## True for wildcard / empty bind hosts that are not valid peer destinations.
+func _is_wildcard_bind(address:String) -> bool:
+	return address.is_empty() \
+			or address == "0.0.0.0" \
+			or address == "::" \
+			or address == "-"
+
+
+## Routable IP peers should use. Prefer a concrete [member bind_address], else
+## [param preferred], else the first local interface address.
+func _resolve_local_ip(preferred:String = "") -> String:
+	if not _is_wildcard_bind(bind_address):
+		return bind_address
+	if not _is_wildcard_bind(preferred):
+		return preferred
+	if not _is_wildcard_bind(local_ip):
+		return local_ip
+	var addrs:PackedStringArray = IP.get_local_addresses()
+	if not addrs.is_empty():
+		return addrs[0]
+	return "127.0.0.1"
+
+
 ## Setter Function with side effects.
 func set_udp_packet_peer( new_packet_peer:PacketPeerUDP ) -> void:
 	if not is_instance_valid(new_packet_peer):
@@ -449,19 +473,20 @@ func set_udp_packet_peer( new_packet_peer:PacketPeerUDP ) -> void:
 				"You might want to use stop() instead.")
 		return
 
+	# close_udp_packet_peer() clears local_ip; keep a candidate for resolve.
+	var preferred_ip:String = local_ip
+
 	if is_instance_valid(_udp_packet_peer) \
 			and _udp_packet_peer.is_bound():
 		close_udp_packet_peer()
 
-	local_port = 0
-	local_ip = ''
-
 	_udp_packet_peer = new_packet_peer
-	local_ip = bind_address
 	local_port = _udp_packet_peer.get_local_port()
+	# Never advertise 0.0.0.0 / :: as a destination — peers cannot send there.
+	local_ip = _resolve_local_ip(preferred_ip)
 
 	print("DEBUG: Bound as", "Leader" if is_leader() else "Peer",
-			"to %s:%s" % [bind_address, local_port])
+			"to %s:%s" % [local_ip, local_port])
 	bound_to_port.emit( local_port, is_leader() )
 
 
@@ -476,7 +501,7 @@ func _bind_as_leader() -> void:
 			set_udp_packet_peer(udp_peer)
 			_leader_ident = local_ident
 			_leader_info[&'port'] = leader_port
-			_leader_info[&'ip'] = bind_address
+			_leader_info[&'ip'] = local_ip
 			_leader_info[&'last_seen'] = Time.get_ticks_msec()
 			promoted.emit()
 		ERR_UNAVAILABLE: # This is OK too.
@@ -870,7 +895,10 @@ func _announce_stop( reason:String = '') -> void:
 	}
 
 	if is_leader():
-		_distribute_packet(bind_address, leader_port, packet)
+		# Relay receivers require origin ip/port on the message body.
+		packet[&'ip'] = local_ip
+		packet[&'port'] = leader_port
+		_distribute_packet(local_ip, leader_port, packet)
 	else:
 		var bytes:PackedByteArray = var_to_bytes(packet)
 		_send_to_leader(bytes)
