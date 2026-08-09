@@ -578,6 +578,25 @@ func update_leader_info( leader_ident:Variant, msg:Dictionary ) -> void:
 	_leader_info.merge(msg, true)
 
 
+## Deterministic dual-leader rule: the lexicographically smaller id string wins.
+## Used so two self-claimed leaders on different hosts converge instead of split-brain.
+func _should_yield_to_leader(other_ident:Variant) -> bool:
+	return idstr.call(other_ident) < idstr.call(local_ident)
+
+
+## Drop the leader socket, rebind as peer, and follow [param new_leader_ident].
+func _demote_to_peer(new_leader_ident:Variant, msg:Dictionary) -> void:
+	print("INFO: Yielding leadership to", idstr.call(new_leader_ident))
+	close_udp_packet_peer()
+	_dest = Dest.NONE
+	_bind_as_peer()
+	if not is_instance_valid(_udp_packet_peer) or not _udp_packet_peer.is_bound():
+		print("ERROR: demote rebind as peer failed")
+		return
+	update_leader_info(new_leader_ident, msg)
+	leader_updated.emit(_leader_ident, _leader_info)
+
+
 func add_peer( peer_ident:Variant, msg:Dictionary ) -> void:
 	_peers[peer_ident] = msg
 	peer_appeared.emit( peer_ident, msg )
@@ -1050,6 +1069,17 @@ func _process_leader_packet( peer_ident:Variant, msg:Dictionary ) -> void:
 		_bind_as_leader()
 		return
 
+	# Ignore our own broadcast loopback if the OS delivers it.
+	if peer_ident == local_ident:
+		return
+
+	# Dual-leader / returning-old-leader: only one identity may keep the role.
+	if is_leader():
+		if _should_yield_to_leader(peer_ident):
+			_demote_to_peer(peer_ident, msg)
+		# else keep leadership; the other side should yield when it hears us
+		return
+
 	# leader is the same as before
 	if _leader_ident == peer_ident:
 		update_leader_info(peer_ident, msg)
@@ -1131,17 +1161,29 @@ func                        ________MAINTAIN_________              ()->void:pass
 ## The leader needs to retire expired _peers from its peer list, and maintain its
 ## heartbeat
 func _leader_maintenance() -> void:
-	if _peers.is_empty(): return
-
-	# Build the presence packet to send to peers.
+	# Build the presence packet to send to peers / LAN.
 	var packet: Dictionary = {
 		&"type": MsgType.PEER | MsgType.LEADER | (MsgType.ADVERT if advertise_presence else 0),
 		&'ident': local_ident,
+		&'ip': local_ip,
+		&'port': leader_port,
 		}
 	if advertise_presence and custom_presence_content:
 		packet[&'data'] = custom_presence_content
 
 	var bytes := var_to_bytes(packet)
+
+	# Broadcast so peers and rival leaders hear us (multi-host bind is not exclusive).
+	var err:Error = set_broadcast_destination()
+	if err == OK:
+		err = _udp_packet_peer.put_packet(bytes)
+		if err != OK:
+			print("ERROR: leader broadcast put_packet failed:", error_string(err))
+	else:
+		print("ERROR: leader broadcast set_dest failed:", error_string(err))
+
+	if _peers.is_empty():
+		return
 
 	for peer_ident:StringName in _peers.keys():
 		var peer_info:Dictionary = _peers[peer_ident]
@@ -1150,7 +1192,7 @@ func _leader_maintenance() -> void:
 		_dest = Dest.PEER
 		var peer_ip:String = peer_info.get(&'ip')
 		var peer_port:int = peer_info.get(&'port')
-		var err:Error = _udp_packet_peer.set_dest_address(peer_ip, peer_port)
+		err = _udp_packet_peer.set_dest_address(peer_ip, peer_port)
 		if err != OK:
 			_dest = Dest.ERROR
 			print("ERROR: set_dest_address failed:", error_string(err))
