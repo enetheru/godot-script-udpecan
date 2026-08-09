@@ -1,6 +1,6 @@
 @tool
 extends Node
-##[codeblock]
+##[codeblock lang=text]
 ##│ _   _ ___  ___
 ##│| | | |   \| _ \___ __ __ _ _ _
 ##│| |_| | |) |  _/ -_) _/ _` | ' \
@@ -41,12 +41,14 @@ extends Node
 ## [b]Notes on naming:[/b]
 ## [br]• "sender" is reserved for the last hop, and is congruent with godot's api
 ## [br]• "source" is reserved for the origin, before any relay
-#[br][color=goldenrod]TODO[/color]: per-advertisement custom timeouts (nice-to-have, not critical)
-#[br][color=goldenrod]TODO[/color]: batch relay packets
-#[br][color=goldenrod]TODO[/color]: Cache packets to avoid re-building them
-#[br][color=goldenrod]TODO[/color]: add channels, to reduce overall traffic both internally and externally
-#[br][color=goldenrod]TODO[/color]: Send a notification packet when removing posts.
-#[br][color=goldenrod]TODO[/color]: Add a pause/resume, that maintains the port binding, but ignores packets.
+##[br][br]
+## [b]TODO List:[/b]
+##[br][color=goldenrod]TODO[/color]: per-advertisement custom timeouts (nice-to-have, not critical)
+##[br][color=goldenrod]TODO[/color]: batch relay packets
+##[br][color=goldenrod]TODO[/color]: Cache packets to avoid re-building them
+##[br][color=goldenrod]TODO[/color]: add channels, to reduce overall traffic both internally and externally
+##[br][color=goldenrod]TODO[/color]: Send a notification packet when removing posts.
+##[br][color=goldenrod]TODO[/color]: Add a pause/resume, that maintains the port binding, but ignores packets.
 
 # Versioning and source location
 const V:String = "0.1.0"
@@ -72,13 +74,14 @@ enum Dest {
 }
 
 ##[codeblock]
-##│ __  __
-##│|  \/  |___ __ _
-##│| |\/| (_-</ _` |
-##│|_|  |_/__/\__, |
-##│           |___/
-##╰───────────────────
-##[/codeblock]The structure of the data that is received on [signal UDPecan.advert_received].
+##│ _   _ ___  ___                    __  __
+##│| | | |   \| _ \___ __ __ _ _ _   |  \/  |___ __ _
+##│| |_| | |) |  _/ -_) _/ _` | ' \ _| |\/| (_-</ _` |
+##│ \___/|___/|_| \___\__\__,_|_||_(_)_|  |_/__/\__, |
+##│                                             |___/
+##╰─────────────────────────────────────────────────────
+##[/codeblock]The structure of the data that is received on
+## [signal UDPecan.advert_received].
 ##
 ## It actually makes it a lot easier to reason about if I specify the advert
 ## class rather than use a dictionary, because of documentation, and tool-tips.
@@ -155,42 +158,42 @@ var local_ip:String
 ## Optional custom data attached to presence broadcasts ([Variant]).
 @export var custom_presence_content: Variant = null
 
-## A cached reference to the peer presence advertisement.
+# A cached reference to the peer presence advertisement.
 var _peer_advert_ident:Variant = null
 
 # [================================[ Private ]================================]
-## The Timer to trigger maintenance cycles.
+# The Timer to trigger maintenance cycles.
 var _maintenance_timer:Timer
 
-## The Packet Peer used to to send and receive packets on the network.
+# The Packet Peer used to to send and receive packets on the network.
 var _udp_packet_peer:PacketPeerUDP
 
-## The current destination set to one of [enum Dest]
+# The current destination set to one of [enum Dest]
 var _dest:int = Dest.NONE
 
-## Remote Host Information
+# Remote Host Information
 var _peers:Dictionary = {}
 
-## Leader Information.
+# Leader Information.
 var _leader_ident:Variant = null
 var _leader_info:Dictionary
 
-## True while a one-shot promotion timer is waiting (leader election jitter).
+# True while a one-shot promotion timer is waiting (leader election jitter).
 var _promotion_pending:bool = false
 
-## Advertisments we are sending
+# Advertisments we are sending
 var _posted_adverts:Dictionary
 
-## Advertisements we have received
+# Advertisements we have received
 var _received_adverts:Dictionary
 
 # [============================[ Encode / Decode ]============================]
-## [Callable] used to serialize advertisement data before sending.
-## [br]Default: returns [method @GlobalScope.var_to_bytes](data)
+# [Callable] used to serialize advertisement data before sending.
+# [br]Default: returns [method @GlobalScope.var_to_bytes](data)
 var _encoders:Dictionary[StringName,Callable] = {&'default':_encode_advertisement}
 
-## [Callable] used to deserialize received advertisement data.
-## [br]Default: returns [method @GlobalScope.bytes_to_var](bytes) or null on failure
+# [Callable] used to deserialize received advertisement data.
+# [br]Default: returns [method @GlobalScope.bytes_to_var](bytes) or null on failure
 var _decoders:Dictionary[StringName,Callable] = {&'default':_decode_advertisement}
 
 # [==============================[ Generate ID ]==============================]
@@ -320,7 +323,7 @@ func _init() -> void:
 		return
 	name = &"UDPecan"
 
-	# Maintenance Timer
+	# Maintenance Timers
 	_maintenance_timer = Timer.new()
 	_maintenance_timer.name = "MaintenanceTimer"
 	add_child(_maintenance_timer, true)
@@ -332,7 +335,7 @@ func _ready() -> void:
 	if start_on_ready: start()
 
 
-## If the [member _udp_packet_peer] is bound, we call [method _process_udp_listener]
+# If the [member _udp_packet_peer] is bound, we call [method _process_udp_listener]
 func _process(_delta:float) -> void:
 	if _udp_packet_peer and _udp_packet_peer.is_bound():
 		_process_udp_listener()
@@ -445,7 +448,7 @@ func close_udp_packet_peer() -> void:
 	local_ip = '-'
 
 
-## True for wildcard / empty bind hosts that are not valid peer destinations.
+# True for wildcard / empty bind hosts that are not valid peer destinations.
 func _is_wildcard_bind(address:String) -> bool:
 	return address.is_empty() \
 			or address == "0.0.0.0" \
@@ -476,7 +479,7 @@ func _is_private_ipv4(address:String) -> bool:
 	return false
 
 
-## Penalize virtual / tunnel adapters so Docker/VPN/WSL lose to real LAN NICs.
+# Penalize virtual / tunnel adapters so Docker/VPN/WSL lose to real LAN NICs.
 func _interface_name_penalty(if_name:String, friendly:String) -> int:
 	var label:String = (if_name + " " + friendly).to_lower()
 	var penalty:int = 0
@@ -496,7 +499,7 @@ func _interface_name_penalty(if_name:String, friendly:String) -> int:
 	return penalty
 
 
-## Higher is better; negative means reject. IPv4 LAN discovery only.
+# Higher is better; negative means reject. IPv4 LAN discovery only.
 func _score_local_ip(address:String, if_name:String = "", friendly:String = "") -> int:
 	if _is_wildcard_bind(address) or _is_loopback_ip(address):
 		return -1
@@ -511,7 +514,7 @@ func _score_local_ip(address:String, if_name:String = "", friendly:String = "") 
 	return score
 
 
-## Choose a LAN-facing IPv4 from [method IP.get_local_interfaces], not [code][0][/code].
+# Choose a LAN-facing IPv4 from [method IP.get_local_interfaces], not [code][0][/code].
 func _pick_best_local_ip() -> String:
 	var best_ip:String = ""
 	var best_score:int = -1
@@ -541,8 +544,8 @@ func _pick_best_local_ip() -> String:
 	return "127.0.0.1"
 
 
-## Routable IP peers should use. Prefer a concrete [member bind_address], else a
-## previously chosen preferred address, else the best-scoring LAN interface.
+# Routable IP peers should use. Prefer a concrete [member bind_address], else a
+# previously chosen preferred address, else the best-scoring LAN interface.
 func _resolve_local_ip(preferred:String = "") -> String:
 	if not _is_wildcard_bind(bind_address):
 		return bind_address
@@ -578,7 +581,7 @@ func set_udp_packet_peer( new_packet_peer:PacketPeerUDP ) -> void:
 	bound_to_port.emit( local_port, is_leader() )
 
 
-## Bind to the leader port
+# Bind to the leader port
 func _bind_as_leader() -> void:
 	var udp_peer := PacketPeerUDP.new()
 	udp_peer.set_broadcast_enabled(true)
@@ -602,7 +605,7 @@ func _bind_as_leader() -> void:
 					"failed with error string:",err, error_string(err))
 
 
-## Keep trying to bind to ports until we get one
+# Keep trying to bind to ports until we get one
 func _bind_as_peer() -> void:
 	var udp_peer := PacketPeerUDP.new()
 	udp_peer.set_broadcast_enabled(true)
@@ -619,14 +622,14 @@ func _bind_as_peer() -> void:
 	_maintenance_timer.start(maintenance_interval << 1)
 
 
-## Parse dotted IPv4 into four octets, or empty on failure.
+# Parse dotted IPv4 into four octets, or empty on failure.
 func _parse_ipv4_octets(address:String) -> PackedInt32Array:
 	if not _is_ipv4_address(address):
 		return PackedInt32Array()
 	var parts:PackedStringArray = address.split(".")
 	if parts.size() != 4:
 		return PackedInt32Array()
-	var out:PackedInt32Array = PackedInt32Array()
+	var out:Array = []
 	for part:String in parts:
 		if not part.is_valid_int():
 			return PackedInt32Array()
@@ -650,13 +653,13 @@ func _u32_to_ipv4(value:int) -> String:
 	]
 
 
-## Best-effort prefix without OS netmask data (typical home/office LANs).
+# Best-effort prefix without OS netmask data (typical home/office LANs).
 func _guess_ipv4_prefix_length(_ip:String) -> int:
 	# Godot does not expose interface netmasks; /24 matches most discovery LANs.
 	return 24
 
 
-## Subnet-directed broadcast for [param ip], or empty string if not computable.
+# Subnet-directed broadcast for [param ip], or empty string if not computable.
 func _subnet_broadcast_for(ip:String) -> String:
 	var octets:PackedInt32Array = _parse_ipv4_octets(ip)
 	if octets.is_empty():
@@ -671,9 +674,9 @@ func _subnet_broadcast_for(ip:String) -> String:
 	return _u32_to_ipv4(broadcast)
 
 
-## Destination used for discovery broadcasts.
-## Prefers subnet broadcast (works when limited broadcast is filtered); falls
-## back to 255.255.255.255; loopback bind uses 127.0.0.1 for single-host tests.
+# Destination used for discovery broadcasts.
+# Prefers subnet broadcast (works when limited broadcast is filtered); falls
+# back to 255.255.255.255; loopback bind uses 127.0.0.1 for single-host tests.
 func _resolve_broadcast_address() -> String:
 	if bind_address.begins_with("127.") or _is_loopback_ip(local_ip):
 		return "127.0.0.1"
@@ -738,13 +741,13 @@ func update_leader_info( leader_ident:Variant, msg:Dictionary ) -> void:
 	# _leader_ident is set (avoids double timers by keeping _promotion_pending).
 
 
-## Deterministic 0 .. maintenance_interval/2 ms from local identity.
+# Deterministic 0 .. maintenance_interval/2 ms from local identity.
 func _promotion_jitter_ms() -> int:
 	var span:int = maxi(1, maintenance_interval >> 1)
 	return absi(hash(idstr.call(local_ident))) % span
 
 
-## Schedule a delayed leader bind so peers do not all race on the same tick.
+# Schedule a delayed leader bind so peers do not all race on the same tick.
 func _schedule_promotion_attempt() -> void:
 	if _promotion_pending or not allow_promotion:
 		return
@@ -754,6 +757,7 @@ func _schedule_promotion_attempt() -> void:
 		return
 	_promotion_pending = true
 	var delay_s:float = _promotion_jitter_ms() / 1000.0
+	@warning_ignore("return_value_discarded")
 	get_tree().create_timer(delay_s).timeout.connect(
 			_on_promotion_timer, CONNECT_ONE_SHOT)
 
@@ -784,7 +788,7 @@ func _build_leader_presence_packet() -> Dictionary:
 	return packet
 
 
-## Immediate LAN announcement after promotion (do not wait for maintenance).
+# Immediate LAN announcement after promotion (do not wait for maintenance).
 func _announce_leader_presence() -> void:
 	if not is_instance_valid(_udp_packet_peer) or not _udp_packet_peer.is_bound():
 		return
@@ -798,13 +802,13 @@ func _announce_leader_presence() -> void:
 		print("ERROR: leader announce put_packet failed:", error_string(err))
 
 
-## Deterministic dual-leader rule: the lexicographically smaller id string wins.
-## Used so two self-claimed leaders on different hosts converge instead of split-brain.
+# Deterministic dual-leader rule: the lexicographically smaller id string wins.
+# Used so two self-claimed leaders on different hosts converge instead of split-brain.
 func _should_yield_to_leader(other_ident:Variant) -> bool:
 	return idstr.call(other_ident) < idstr.call(local_ident)
 
 
-## Drop the leader socket, rebind as peer, and follow [param new_leader_ident].
+# Drop the leader socket, rebind as peer, and follow [param new_leader_ident].
 func _demote_to_peer(new_leader_ident:Variant, msg:Dictionary) -> void:
 	print("INFO: Yielding leadership to", idstr.call(new_leader_ident))
 	close_udp_packet_peer()
@@ -1014,7 +1018,7 @@ func clear_adverts() -> void:
 #                      ███████ ███████ ██   ████ ██████                        #
 func                        __________SEND___________              ()->void:pass
 
-## (Peer => (broadcast|leader.ip):leader_port)
+# (Peer => (broadcast|leader.ip):leader_port)
 func _peer_heartbeat() -> void:
 	# All packets are sent to the Leader, but only ADVERT packets
 	# are propagated to other PEERS.
@@ -1031,8 +1035,8 @@ func _peer_heartbeat() -> void:
 	_send_to_leader(bytes)
 
 
-## Peer sends one final packet announcing it is leaving.
-## Leader will relay it like any other PEER packet.
+# Peer sends one final packet announcing it is leaving.
+# Leader will relay it like any other PEER packet.
 func _send_to_leader( bytes:PackedByteArray ) -> void:
 	var err: Error = OK
 	if _dest != Dest.LEADER and _leader_ident != null:
@@ -1050,11 +1054,11 @@ func _send_to_leader( bytes:PackedByteArray ) -> void:
 		stop()
 
 
-## Broadcast advertisements to all using the leader port[br]
-## packet format: {[br]
-## [b]  [code]&'type'[/code]: MsgType.ADVERT,[br]
-## [b]  [code]&'data'[/code]: encoded[br]
-## }[br]
+# Broadcast advertisements to all using the leader port[br]
+# packet format: {[br]
+# [b]  [code]&'type'[/code]: MsgType.ADVERT,[br]
+# [b]  [code]&'data'[/code]: encoded[br]
+# }[br]
 func _broadcast_adverts() -> void:
 	var err: Error = OK
 	# Use the leader if they exist and we are not them.
@@ -1096,7 +1100,7 @@ func _broadcast_adverts() -> void:
 			break
 
 
-## update the packet and send to peers.
+# update the packet and send to peers.
 func _distribute_packet(source_ip:String, source_port:int, msg:Dictionary) -> void:
 	msg[&'type'] = msg.get(&'type', 0) | MsgType.RELAY
 	var relay_bytes := var_to_bytes(msg)
@@ -1128,8 +1132,8 @@ func _distribute_packet(source_ip:String, source_port:int, msg:Dictionary) -> vo
 			print("ERROR: relay put_packet failed for", peer_ident, ":", error_string(err))
 
 
-## Peer sends one final packet announcing it is leaving.
-## Leader will relay it like any other PEER packet.
+# Peer sends one final packet announcing it is leaving.
+# Leader will relay it like any other PEER packet.
 func _announce_stop( reason:String = '') -> void:
 	var packet: Dictionary = {
 		&"type": MsgType.PEER | MsgType.SHUTDOWN | (MsgType.LEADER if is_leader() else 0),
@@ -1155,36 +1159,36 @@ func _announce_stop( reason:String = '') -> void:
 #             ██   ██ ███████  ██████ ███████ ██   ████   ███████              #
 func                        _________RECEIVE_________              ()->void:pass
 
-## During the [method _process] cycle, we check the [PacketPeerUDP] for any
-## [br]messages waiting for us and process them according to their schema
-## [br]
-## [br][color=lime_green](2026-02-04)NOTE[/color]: We deliberately use get_packet()
-## + bytes_to_var() instead of get_var()
-## [br]Reasons:
-## [br] - Allows access to raw bytes for logging / debugging / early validation
-## [br] - get_packet_ip() and get_packet_port() are only reliable immediately
-## [br]   after get_packet() (behavior can be inconsistent after get_var())
-## [br] - bytes_to_var() returns null on failure → explicit error path possible
-## [br] - Easier to support non-Godot formats later (JSON, custom binary, etc.)
-## [br]
-## [br]packet format on [method PacketPeer.get_packet]: {
-## [br]  [code]type[/code]: [enum MsgType],
-## [br]  [code]data[/code]: [PackedByteArray]
-## [br]}
-## [br]
-## Where [code]type[/code] is a bitmask with at least [enum MsgType].ADVERT or [enum MsgType].PEER present
-## [br]- ([enum MsgType].PEER | [enum MsgType].ADVERT): Indicates that this peer is visible publicly
-## [br]- ([enum MsgType].PEER | [enum MsgType].LEADER): This packet is from the leader
-## [br]
-## [br]Before distributing to consumers we add 'ip' and 'port'
-## [br]And then when we process it ourselves we add 'last_seen'
-## [br]Packet format on consumption: {
-## [br]  [code]type[/code]     : [enum MsgType],
-## [br]  [code]data[/code]     : [PackedByteArray]
-## [br]  [code]ip[/code]       : [String] - origin_ip
-## [br]  [code]port[/code]     : [int] - origin_port
-## [br]  [code]last_seen[/code]: [int] - time_received
-## [br]}
+# During the [method _process] cycle, we check the [PacketPeerUDP] for any
+# [br]messages waiting for us and process them according to their schema
+# [br]
+# [br][color=lime_green](2026-02-04)NOTE[/color]: We deliberately use get_packet()
+# + bytes_to_var() instead of get_var()
+# [br]Reasons:
+# [br] - Allows access to raw bytes for logging / debugging / early validation
+# [br] - get_packet_ip() and get_packet_port() are only reliable immediately
+# [br]   after get_packet() (behavior can be inconsistent after get_var())
+# [br] - bytes_to_var() returns null on failure → explicit error path possible
+# [br] - Easier to support non-Godot formats later (JSON, custom binary, etc.)
+# [br]
+# [br]packet format on [method PacketPeer.get_packet]: {
+# [br]  [code]type[/code]: [enum MsgType],
+# [br]  [code]data[/code]: [PackedByteArray]
+# [br]}
+# [br]
+# Where [code]type[/code] is a bitmask with at least [enum MsgType].ADVERT or [enum MsgType].PEER present
+# [br]- ([enum MsgType].PEER | [enum MsgType].ADVERT): Indicates that this peer is visible publicly
+# [br]- ([enum MsgType].PEER | [enum MsgType].LEADER): This packet is from the leader
+# [br]
+# [br]Before distributing to consumers we add 'ip' and 'port'
+# [br]And then when we process it ourselves we add 'last_seen'
+# [br]Packet format on consumption: {
+# [br]  [code]type[/code]     : [enum MsgType],
+# [br]  [code]data[/code]     : [PackedByteArray]
+# [br]  [code]ip[/code]       : [String] - origin_ip
+# [br]  [code]port[/code]     : [int] - origin_port
+# [br]  [code]last_seen[/code]: [int] - time_received
+# [br]}
 func _process_udp_listener() -> void:
 	while _udp_packet_peer.get_available_packet_count() > 0:
 		var bytes: PackedByteArray = _udp_packet_peer.get_packet()
@@ -1229,7 +1233,7 @@ func _process_udp_listener() -> void:
 			if source_ip.is_empty():
 				source_ip = str(msg.get(&'ip', ''))
 			if source_port == 0:
-				source_port = int(msg.get(&'port', 0))
+				source_port = msg.get(&'port', 0)
 			msg[&"ip"] = source_ip
 			msg[&"port"] = source_port
 
@@ -1389,8 +1393,8 @@ func compare(a:Dictionary, b:Dictionary) -> bool:
 #        ██      ██ ██   ██ ██ ██   ████    ██    ██   ██ ██ ██   ████         #
 func                        ________MAINTAIN_________              ()->void:pass
 
-## The leader needs to retire expired _peers from its peer list, and maintain its
-## heartbeat
+# The leader needs to retire expired _peers from its peer list, and maintain its
+# heartbeat
 func _leader_maintenance() -> void:
 	var bytes:PackedByteArray = var_to_bytes(_build_leader_presence_packet())
 
@@ -1425,8 +1429,8 @@ func _leader_maintenance() -> void:
 			print("ERROR: put_packet failed:", error_string(err))
 
 
-## The peer needs to attempt to bind to the leader port if the leader becomes
-## unresponsive and maintain it's heartbeat
+# The peer needs to attempt to bind to the leader port if the leader becomes
+# unresponsive and maintain it's heartbeat
 func _peer_maintenance() -> void:
 	# Check the leader's last seen, and delete it if expired.
 	if not _leader_info.is_empty():
@@ -1446,8 +1450,8 @@ func _peer_maintenance() -> void:
 	_peer_heartbeat()
 
 
-## The leader needs to retire expired _peers from its peer list, and maintain its
-## heartbeat
+# The leader needs to retire expired _peers from its peer list, and maintain its
+# heartbeat
 func _peer_list_maintenance() -> void:
 	for peer_ident:StringName in _peers.keys():
 		var peer_info:Dictionary = _peers.get(peer_ident)
@@ -1472,14 +1476,14 @@ func _remote_advert_maintenance() -> void:
 func                        ________ENCODING_________              ()->void:pass
 # Advertisement Encoding / Decoding abstraction
 
-## Default implementation uses Dictionary + var_to_bytes.
-## Override these in a subclass for FlatBuffers, JSON, etc.
+# Default implementation uses Dictionary + var_to_bytes.
+# Override these in a subclass for FlatBuffers, JSON, etc.
 func _encode_advertisement(variant:Variant) -> PackedByteArray:
 	return var_to_bytes(variant)
 
 
-## Default implementation uses Dictionary + var_to_bytes.
-## Override these in a subclass for FlatBuffers, JSON, etc.
+# Default implementation uses Dictionary + var_to_bytes.
+# Override these in a subclass for FlatBuffers, JSON, etc.
 func _decode_advertisement(bytes:PackedByteArray) -> Variant:
 	var variant:Variant = bytes_to_var(bytes)
 	if typeof(variant) == TYPE_NIL:
