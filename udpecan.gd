@@ -346,14 +346,12 @@ func                        _________METHODS_________              ()->void:pass
 ## Attempts to bind as leader first; falls back to peer mode if port is taken.
 func start() -> void:
 	# At the top of _ready or start_listener
-	var local_addresses:PackedStringArray = IP.get_local_addresses()
-	if local_addresses.is_empty():
+	if IP.get_local_addresses().is_empty():
 		print("ERROR: There are no ip addresses, Check Network Settings")
 		return
 
-	# TODO: implement some nice way to specify the local bind address
-	# Prefer concrete bind_address; otherwise first interface (see issue #6).
-	local_ip = _resolve_local_ip(local_addresses[0])
+	# Prefer concrete bind_address; else best LAN IPv4 (not first interface blindly).
+	local_ip = _resolve_local_ip()
 
 	if local_ident == null:
 		local_ident = ident_generator.call()
@@ -451,19 +449,105 @@ func _is_wildcard_bind(address:String) -> bool:
 			or address == "-"
 
 
-## Routable IP peers should use. Prefer a concrete [member bind_address], else
-## [param preferred], else the first local interface address.
-func _resolve_local_ip(preferred:String = "") -> String:
-	if not _is_wildcard_bind(bind_address):
-		return bind_address
-	if not _is_wildcard_bind(preferred):
-		return preferred
-	if not _is_wildcard_bind(local_ip):
-		return local_ip
+func _is_ipv4_address(address:String) -> bool:
+	return address.count(".") == 3 and not address.contains(":")
+
+
+func _is_loopback_ip(address:String) -> bool:
+	return address.begins_with("127.") or address == "::1"
+
+
+func _is_link_local_ip(address:String) -> bool:
+	return address.begins_with("169.254.") or address.begins_with("fe80:")
+
+
+func _is_private_ipv4(address:String) -> bool:
+	if address.begins_with("10.") or address.begins_with("192.168."):
+		return true
+	if address.begins_with("172."):
+		var parts:PackedStringArray = address.split(".")
+		if parts.size() >= 2:
+			var second:int = int(parts[1])
+			return second >= 16 and second <= 31
+	return false
+
+
+## Penalize virtual / tunnel adapters so Docker/VPN/WSL lose to real LAN NICs.
+func _interface_name_penalty(if_name:String, friendly:String) -> int:
+	var label:String = (if_name + " " + friendly).to_lower()
+	var penalty:int = 0
+	const BAD:PackedStringArray = [
+		"docker", "veth", "br-", "vmnet", "vbox", "virtual", "wsl",
+		"hyper-v", "hyperv", "tun", "tap", "wg", "vpn", "zerotier",
+		"hamachi", "tailscale", "utun", "loopback", "isatap", "teredo",
+		"bluetooth", "npcap", "meta",
+	]
+	for token:String in BAD:
+		if label.contains(token):
+			penalty += 100
+	# Mild preference for wired over wireless when both are private LAN.
+	if label.contains("wi-fi") or label.contains("wifi") \
+			or label.contains("wlan") or label.contains("wireless"):
+		penalty += 10
+	return penalty
+
+
+## Higher is better; negative means reject. IPv4 LAN discovery only.
+func _score_local_ip(address:String, if_name:String = "", friendly:String = "") -> int:
+	if _is_wildcard_bind(address) or _is_loopback_ip(address):
+		return -1
+	if not _is_ipv4_address(address):
+		return -1
+	if _is_link_local_ip(address):
+		return -1
+	var score:int = 20
+	if _is_private_ipv4(address):
+		score += 50
+	score -= _interface_name_penalty(if_name, friendly)
+	return score
+
+
+## Choose a LAN-facing IPv4 from [method IP.get_local_interfaces], not [code][0][/code].
+func _pick_best_local_ip() -> String:
+	var best_ip:String = ""
+	var best_score:int = -1
+	for iface:Variant in IP.get_local_interfaces():
+		if not (iface is Dictionary):
+			continue
+		var d:Dictionary = iface
+		var if_name:String = str(d.get("name", ""))
+		var friendly:String = str(d.get("friendly", ""))
+		var addresses:Variant = d.get("addresses", [])
+		if not (addresses is Array) and not (addresses is PackedStringArray):
+			continue
+		for address:Variant in addresses:
+			var ip:String = str(address)
+			var s:int = _score_local_ip(ip, if_name, friendly)
+			if s > best_score:
+				best_score = s
+				best_ip = ip
+	if not best_ip.is_empty():
+		return best_ip
+	for address:String in IP.get_local_addresses():
+		if _score_local_ip(address) >= 0:
+			return address
 	var addrs:PackedStringArray = IP.get_local_addresses()
 	if not addrs.is_empty():
 		return addrs[0]
 	return "127.0.0.1"
+
+
+## Routable IP peers should use. Prefer a concrete [member bind_address], else a
+## previously chosen preferred address, else the best-scoring LAN interface.
+func _resolve_local_ip(preferred:String = "") -> String:
+	if not _is_wildcard_bind(bind_address):
+		return bind_address
+	# Keep a prior good choice across rebinds (demote / re-promote).
+	if not _is_wildcard_bind(preferred) and _score_local_ip(preferred) >= 0:
+		return preferred
+	if not _is_wildcard_bind(local_ip) and _score_local_ip(local_ip) >= 0:
+		return local_ip
+	return _pick_best_local_ip()
 
 
 ## Setter Function with side effects.
