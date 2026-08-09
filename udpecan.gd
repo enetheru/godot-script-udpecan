@@ -882,9 +882,13 @@ func                        __________SEND___________              ()->void:pass
 func _peer_heartbeat() -> void:
 	# All packets are sent to the Leader, but only ADVERT packets
 	# are propagated to other PEERS.
+	# Include ip/port so peer records stay complete across relay / leader handoff
+	# even if get_packet_ip() is empty on some platforms.
 	var msg: Dictionary = {
-		&"type":MsgType.PEER,
-		&'ident': local_ident
+		&"type": MsgType.PEER,
+		&'ident': local_ident,
+		&'ip': local_ip,
+		&'port': local_port,
 	}
 
 	var bytes := var_to_bytes(msg)
@@ -993,13 +997,14 @@ func _distribute_packet(source_ip:String, source_port:int, msg:Dictionary) -> vo
 func _announce_stop( reason:String = '') -> void:
 	var packet: Dictionary = {
 		&"type": MsgType.PEER | MsgType.SHUTDOWN | (MsgType.LEADER if is_leader() else 0),
-		&'ident':local_ident,
-		&"content":reason.to_utf8_buffer()
+		&'ident': local_ident,
+		&'ip': local_ip,
+		&'port': local_port,
+		&"content": reason.to_utf8_buffer()
 	}
 
 	if is_leader():
 		# Relay receivers require origin ip/port on the message body.
-		packet[&'ip'] = local_ip
 		packet[&'port'] = leader_port
 		_distribute_packet(local_ip, leader_port, packet)
 	else:
@@ -1081,10 +1086,15 @@ func _process_udp_listener() -> void:
 		# If this is a new message, assign the source details
 		# and relay to peers if necessary.
 		if not (msg_type & MsgType.RELAY):
+			# UDP header is preferred for the return path; body ip/port
+			# (from heartbeats) fills in when the header is unavailable.
 			source_ip = sender_ip
 			source_port = sender_port
-			# Update the msg with the source info
-			msg[&"ip"]   = source_ip
+			if source_ip.is_empty():
+				source_ip = str(msg.get(&'ip', ''))
+			if source_port == 0:
+				source_port = int(msg.get(&'port', 0))
+			msg[&"ip"] = source_ip
 			msg[&"port"] = source_port
 
 			# Relay the appropriate packets onward.
@@ -1303,7 +1313,11 @@ func _peer_maintenance() -> void:
 	if _leader_ident == null \
 			and allow_promotion:
 		_bind_as_leader()
-		if is_leader(): return
+		if is_leader():
+			return
+		# Lost the race (or multi-host election still settling): drop stale dest
+		# so the following heartbeat goes out on broadcast to find the winner.
+		_dest = Dest.NONE
 
 	# If a peer wants packets relayed to it, it needs to notify the leader that
 	# it exists.
