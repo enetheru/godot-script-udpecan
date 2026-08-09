@@ -619,20 +619,87 @@ func _bind_as_peer() -> void:
 	_maintenance_timer.start(maintenance_interval << 1)
 
 
+## Parse dotted IPv4 into four octets, or empty on failure.
+func _parse_ipv4_octets(address:String) -> PackedInt32Array:
+	if not _is_ipv4_address(address):
+		return PackedInt32Array()
+	var parts:PackedStringArray = address.split(".")
+	if parts.size() != 4:
+		return PackedInt32Array()
+	var out:PackedInt32Array = PackedInt32Array()
+	for part:String in parts:
+		if not part.is_valid_int():
+			return PackedInt32Array()
+		var n:int = int(part)
+		if n < 0 or n > 255:
+			return PackedInt32Array()
+		out.append(n)
+	return out
+
+
+func _ipv4_octets_to_u32(octets:PackedInt32Array) -> int:
+	return (octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]
+
+
+func _u32_to_ipv4(value:int) -> String:
+	return "%d.%d.%d.%d" % [
+		(value >> 24) & 0xff,
+		(value >> 16) & 0xff,
+		(value >> 8) & 0xff,
+		value & 0xff,
+	]
+
+
+## Best-effort prefix without OS netmask data (typical home/office LANs).
+func _guess_ipv4_prefix_length(_ip:String) -> int:
+	# Godot does not expose interface netmasks; /24 matches most discovery LANs.
+	return 24
+
+
+## Subnet-directed broadcast for [param ip], or empty string if not computable.
+func _subnet_broadcast_for(ip:String) -> String:
+	var octets:PackedInt32Array = _parse_ipv4_octets(ip)
+	if octets.is_empty():
+		return ""
+	if _is_loopback_ip(ip) or _is_link_local_ip(ip):
+		return ""
+	var prefix:int = clampi(_guess_ipv4_prefix_length(ip), 1, 30)
+	var host_bits:int = 32 - prefix
+	var mask:int = (0xffffffff << host_bits) & 0xffffffff
+	var network:int = _ipv4_octets_to_u32(octets) & mask
+	var broadcast:int = network | (~mask & 0xffffffff)
+	return _u32_to_ipv4(broadcast)
+
+
+## Destination used for discovery broadcasts.
+## Prefers subnet broadcast (works when limited broadcast is filtered); falls
+## back to 255.255.255.255; loopback bind uses 127.0.0.1 for single-host tests.
+func _resolve_broadcast_address() -> String:
+	if bind_address.begins_with("127.") or _is_loopback_ip(local_ip):
+		return "127.0.0.1"
+	var subnet:String = _subnet_broadcast_for(local_ip)
+	if not subnet.is_empty():
+		return subnet
+	return "255.255.255.255"
+
+
 func set_broadcast_destination() -> Error:
 	if not is_instance_valid(_udp_packet_peer):
 		print("ERROR: Cannot set_dest_address on invalid udp_listener")
 		return ERR_UNAVAILABLE
 
 	_dest = Dest.BROADCAST
-	var dest_address:String = "255.255.255.255"
+	var dest_address:String = _resolve_broadcast_address()
 	var dest_port:int = leader_port
-	# print("TRACE: ip:", dest_address, "port:", dest_port)
 
 	var err:Error = _udp_packet_peer.set_dest_address(dest_address, dest_port)
 	if err:
-		_dest = Dest.ERROR
-		print("ERROR: ", error_string(err))
+		# Some stacks reject subnet broadcast; retry limited broadcast.
+		if dest_address != "255.255.255.255" and dest_address != "127.0.0.1":
+			err = _udp_packet_peer.set_dest_address("255.255.255.255", dest_port)
+		if err:
+			_dest = Dest.ERROR
+			print("ERROR: ", error_string(err))
 
 	return err
 
@@ -1455,16 +1522,18 @@ const FRUITS: PackedStringArray = [
 	]
 
 ## Generates friendly random device/user names in the style of LocalSend.
-## Names are produced as "AdjectiveFruit" pairs (e.g. "SpicyMango"),
-## Pass a non-negative [param seed] for deterministic output.
+## Names are produced as "AdjectiveFruit" pairs (e.g. "SpicyMango").
+## Pass a non-negative [param name_seed] for deterministic output (debugging).
 static func fruity_name(name_seed:int = -1) -> String:
+	if ADJECTIVES.is_empty() or FRUITS.is_empty():
+		return "UnknownNut-%d" % [Time.get_ticks_msec() if name_seed < 0 else name_seed]
 	var rng := RandomNumberGenerator.new()
 	if name_seed >= 0:
-		rng.seed = name_seed
+		rng.seed = name_seed as int
 	else:
 		rng.randomize()
-	var adj := ADJECTIVES[rng.randi() % ADJECTIVES.size()]
-	var fruit := FRUITS[rng.randi() % FRUITS.size()]
+	var adj:String = ADJECTIVES[rng.randi() % ADJECTIVES.size()]
+	var fruit:String = FRUITS[rng.randi() % FRUITS.size()]
 	return "%s%s" % [adj, fruit]
 
 
