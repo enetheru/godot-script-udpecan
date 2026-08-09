@@ -1,50 +1,52 @@
 @tool
 extends Node
-## │ _   _ ___  ___                    [br]
-## │| | | |   \| _ \___ __ __ _ _ _    [br]
-## │| |_| | |) |  _/ -_) _/ _` | ' \   [br]
-## │ \___/|___/|_| \___\__\__,_|_||_|  [br]
-## ╰───────────────────────────────────[br]
-## LAN peer discovery and advertisement service using UDP broadcast/relay.
-## [br]UDPecan — because every network needs at least one overly enthusiastic nut
-## broadcasting on UDP.
+##[codeblock]
+##│ _   _ ___  ___
+##│| | | |   \| _ \___ __ __ _ _ _
+##│| |_| | |) |  _/ -_) _/ _` | ' \
+##│ \___/|___/|_| \___\__\__,_|_||_|
+##╰───────────────────────────────────
+##[/codeblock]LAN peer discovery and advertisement service using UDP broadcast/relay.
 ##
+## UDPecan — because every network needs at least one overly enthusiastic nut
+## broadcasting on UDP.
+##[br][br]
 ## This node provides automatic LAN server discovery and advertisement.
 ## [br]It supports two roles:
 ## [br]• [b]Leader[/b] — binds to a fixed port and relays messages between peers
 ## [br]• [b]Peer[/b]   — sends heartbeats to the leader and receives relayed messages
-## [br]
-## [br][b]Features:[/b]
+##[br][br]
+## [b]Features:[/b]
 ## [br]• Peer presence detection with timeout
 ## [br]• Advertisement publishing and receiving (with custom data)
 ## [br]• Automatic leader election/promotion when the leader disappears
 ## [br]• Graceful shutdown announcement
 ## [br]• Relaying of presence and advertisements via the leader
-## [br]
-## [br]Main usage:
+##[br][br]
+## [b]Main usage:[/b]
 ## [br]1. Attach this node to a scene
 ## [br]2. Set exported properties ([member leader_port], [member bind_address], etc.)
 ## [br]3. Call [method start] or set [member start_on_ready] to [code]true[/code]
 ## [br]4. Connect to signals ([signal peer_appeared], [signal advert_received], etc.)
-## [br]
-## [br]Advertisement data format can be customized by setting the [Callable]s:
+##[br][br]
+## Advertisement data format can be customized by setting the [Callable]s:
 ## [member advertisement_encoder] / [member advertisement_decoder]
-## [br]
-## [br]Important implementation notes:
+##[br][br]
+## [b]Important implementation notes:[/b]
 ## [br]• Uses [PacketPeerUDP] with manual [method @GlobalScope.var_to_bytes] /
-## 		 [method @GlobalScope.bytes_to_var]
+## [method @GlobalScope.bytes_to_var]
 ## [br]• Leader relays messages — peers never broadcast directly to each other
 ## [br]• Single-host/multi-process testing is supported via different ports
-## [br]
-## [br]Notes on naming:
+##[br][br]
+## [b]Notes on naming:[/b]
 ## [br]• "sender" is reserved for the last hop, and is congruent with godot's api
 ## [br]• "source" is reserved for the origin, before any relay
-## [br][color=goldenrod]TODO[/color]: per-advertisement custom timeouts (nice-to-have, not critical)
-## [br][color=goldenrod]TODO[/color]: batch relay packets
-## [br][color=goldenrod]TODO[/color]: Cache packets to avoid re-building them
-## [br][color=goldenrod]TODO[/color]: add channels, to reduce overall traffic both internally and externally
-## [br][color=goldenrod]TODO[/color]: Send a notification packet when removing posts.
-## [br][color=goldenrod]TODO[/color]: Add a pause/resume, that maintains the port binding, but ignores packets.
+#[br][color=goldenrod]TODO[/color]: per-advertisement custom timeouts (nice-to-have, not critical)
+#[br][color=goldenrod]TODO[/color]: batch relay packets
+#[br][color=goldenrod]TODO[/color]: Cache packets to avoid re-building them
+#[br][color=goldenrod]TODO[/color]: add channels, to reduce overall traffic both internally and externally
+#[br][color=goldenrod]TODO[/color]: Send a notification packet when removing posts.
+#[br][color=goldenrod]TODO[/color]: Add a pause/resume, that maintains the port binding, but ignores packets.
 
 # Versioning and source location
 const V:String = "0.1.0"
@@ -69,25 +71,27 @@ enum Dest {
 	BROADCAST,
 }
 
-## │ _   _ ___  ___                        ___        _      [br]
-## │| | | |   \| _ \___ __ __ _ _ _       | _ \___ __| |_    [br]
-## │| |_| | |) |  _/ -_) _/ _` | ' \   _  |  _/ _ (_-<  _|   [br]
-## │ \___/|___/|_| \___\__\__,_|_||_| (_) |_| \___/__/\__|   [br]
-## ╰──────────────────────────────────────────────────────── [br]
-## The structure of the data that is received on [signal UDPecan.advert_received] [br]
-## [br]
+##[codeblock]
+##│ __  __
+##│|  \/  |___ __ _
+##│| |\/| (_-</ _` |
+##│|_|  |_/__/\__, |
+##│           |___/
+##╰───────────────────
+##[/codeblock]The structure of the data that is received on [signal UDPecan.advert_received].
+##
 ## It actually makes it a lot easier to reason about if I specify the advert
-## class rather than use a dictionary, because of documenation, and tool-tips[br]
-## [br]
-## [br]var post:Dictionary = {
-## [br]  [code]&'type'[/code]   :   0,   # [enum UDPecan.MsgType] - the type of packet
-## [br]  [code]&'ip'[/code]     :  '',   # [String]               - ip address of advertiser
-## [br]  [code]&'port'[/code]   :   0,   # [int]                  - port on advertiser
-## [br]  [code]&'ident'[/code]  :null,   # [Variant]              - The identity of the sender
-## [br]  [code]&'ad_id'[/code]  :null,   # [Variant]              - advert unique id
-## [br]  [code]&'kind'[/code]   :  '',   # [StringName]           - the kind of advertisement
-## [br]  [code]&'content'[/code]:null,   # [Variant]              - Decoded Advertisement Data
-## [br]}
+## class rather than use a dictionary, because of documentation, and tool-tips.
+##[br][br]
+## [code]var post:Dictionary = {[/code][br]
+## [code]  &'type'   :   0,   # MsgType - the type of packet[/code][br]
+## [code]  &'ip'     :  '',   # String - ip address of advertiser[/code][br]
+## [code]  &'port'   :   0,   # int - port on advertiser[/code][br]
+## [code]  &'ident'  :null,   # Variant - The identity of the sender[/code][br]
+## [code]  &'ad_id'  :null,   # Variant - advert unique id[/code][br]
+## [code]  &'kind'   :  '',   # StringName - the kind of advertisement[/code][br]
+## [code]  &'content':null,   # Variant - Decoded Advertisement Data[/code][br]
+## [code]}[/code]
 class Msg:
 	pass
 # NOTE: The above is a hacky way to get an individual page on any subject.
@@ -1037,10 +1041,10 @@ func _process_advert_packet( ad_id:Variant, msg:Dictionary ) -> void:
 
 	if _received_adverts.has(ad_id):
 		var old:Dictionary = _received_adverts.get(ad_id)
+		# Compare before merge: merge would make old match msg on shared keys.
+		var content_changed:bool = compare(old, msg)
 		old.merge(msg, true)
-		# TODO Figure out if the contents have changed or not, and only
-		# emit if they have.
-		if compare(old, msg):
+		if content_changed:
 			advert_updated.emit(ad_id, msg)
 	else:
 		_received_adverts[ad_id] = msg
@@ -1072,8 +1076,21 @@ func is_msg_missing_keys( msg:Dictionary, keys:Array ) -> bool:
 				return true) != null
 
 
-# FIXME, is this used?
-func compare(_a:Dictionary, _b:Dictionary) -> bool:
+## True when advertisement payload differs (ignores [code]last_seen[/code] and [code]type[/code]).
+## Used so [signal advert_updated] fires on real content changes, not heartbeat refresh.
+func compare(a:Dictionary, b:Dictionary) -> bool:
+	# last_seen always advances; type may gain RELAY after leader distribution.
+	const IGNORE:Array[StringName] = [&'last_seen', &'type']
+	for key:Variant in b:
+		if key in IGNORE:
+			continue
+		if not a.has(key) or a[key] != b[key]:
+			return true
+	for key:Variant in a:
+		if key in IGNORE:
+			continue
+		if not b.has(key):
+			return true
 	return false
 
 #        ███    ███  █████  ██ ███    ██ ████████  █████  ██ ███    ██         #
